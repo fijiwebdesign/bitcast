@@ -1,10 +1,10 @@
 {
-  "name": "dlnacasts",
+  "name": "bitcast",
   "version": "0.1.0",
-  "description": "Query your local network for DLNA enabled renderers and have them play media",
-  "main": "index.js",
+  "description": "Stream video from BitTorrent and cast directly to DNLA/Upnp media renders (Smart TV)",
+  "main": "cast.js",
   "scripts": {
-    "start": "node example.js",
+    "start": "node cast.js",
     "test": "standard"
   },
   "repository": {
