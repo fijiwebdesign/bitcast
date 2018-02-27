@@ -25,6 +25,7 @@ module.exports = function () {
   that.players = []
 
   var emit = function (cst) {
+    debug('Emit ', cst)
     if (!cst || !cst.host || cst.emitted) return
     cst.emitted = true
 
@@ -192,10 +193,15 @@ module.exports = function () {
 
   if (ssdp) {
     ssdp.on('response', function (headers, statusCode, info) {
+      debug('ssdp.on response', headers, statusCode, info)
       if (!headers.LOCATION) return
 
       get.concat(headers.LOCATION, function (err, res, body) {
-        if (err) return
+        if (err) {
+          debug('Error requesting location', headers.LOCATION)
+          return
+        }
+
         parseString(body.toString(), {explicitArray: false, explicitRoot: false},
           function (err, service) {
             if (err) return
