@@ -6,7 +6,7 @@ var EventEmitter = require('eventemitter2').EventEmitter2
 var debug = require('debug')('cast')
 
 var url = process.argv[2];
-var isTorrent = process.argv[3] == 'torrent'
+var isTorrent = process.argv[3] == 'torrent' || url.match(/[.?]torrent$/)
 
 if (!url) {
   throw new Error('Please specify url argument')
