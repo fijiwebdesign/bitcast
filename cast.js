@@ -19,7 +19,8 @@ var url = process.argv[2];
 
 function showUsage() {
   console.log(`
-    usage: 
+    Usage:
+
       bitcast $url
 
       Param: 
@@ -30,7 +31,7 @@ function showUsage() {
 }
 
 if (!url) {
-  console.log('Please specify url argument')
+  console.log('Parameter Error: Please specify url argument')
   showUsage()
   return
 } else {
@@ -61,10 +62,13 @@ var startCast = (url) => {
         }
       })
     })
-  } else {
+  } else if (isHttp(url)) {
     console.log('Starting http stream', url)
     castWithRetry(url)
       .then(() => availableCommandMsg())
+  } else {
+    console.log('Parameter Error: Unknown url argument')
+    showUsage()
   }
 }
 
