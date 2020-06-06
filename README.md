@@ -1,6 +1,6 @@
 # bitcast
 
-Stream video from BitTorrent and cast directly to DNLA/Upnp media renders (Smart TV)
+Stream video from BitTorrent and cast directly to DLNA/Upnp media renders (Smart TV)
 
 Query your local network for DLNA media renderers and have them play media
 
@@ -81,7 +81,7 @@ The `client` is the `webtorrent` instance
 The `type` is a string representing the server type (torrent|mp4) where mp4 is transcoding server for mp4 video playable by HTML5. 
 
 
-### DNLA
+### DLNA
 
 #### `var list = dlnacasts()`
 
