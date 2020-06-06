@@ -1,30 +1,50 @@
-var dlnacasts = require('./index')()
+var dlnacasts = require('./dnla')()
 var server = require('./lib/server')
 var onExit = require('./lib/onExit')
 var readcommand = require('readcommand')
 var EventEmitter = require('eventemitter2').EventEmitter2
-var debug = require('debug')('cast')
+var parseTorrent = require('parse-torrent')
+var debug = require('debug')('bitcast:cast')
+
+var isTorrent = url => {
+  try {
+    return url.match(/[.]torrent$/) || parseTorrent(url)
+  } catch(error) {
+    return false
+  }
+}
+var isHttp = url => url.match(/^https?\:\/\//)
 
 var url = process.argv[2];
-var isTorrent = process.argv[3] == 'torrent' || url.match(/[.?]torrent$/)
 
 if (!url) {
   throw new Error('Please specify url argument')
 }
 
-var getPlayers = new Promise(function(resolve) {
-  dlnacasts.once('update', function (player) {
-    console.log('Available players: ', dlnacasts.players.map(player => player.name))
+var getPlayers = () => new Promise(function(resolve) {
+  if (dlnacasts.players.length) {
     resolve(dlnacasts.players)
-  })
+  } else {
+    dlnacasts.once('update', function (player) {
+      resolve(dlnacasts.players)
+    })
+  }
 })
 
-if (!url.match(/^http/) && !isTorrent) {
+var castWithRetry = (url, retries = 5, interval = 5000) => {
+  cast(url).catch(error => {
+    debug(error)
+    console.log('Cast failed, retrying...')
+    setTimeout(() => castWithRetry(url, retries - 1, interval))
+  })
+}
+
+if (!isHttp(url) && isTorrent(url)) {
   var magnet = url
   console.log('Starting torrent stream', magnet)
   server(magnet, function(url, server, client, type) {
     console.log('Server created at url', url, type)
-    cast(url)
+    castWithRetry(url)
     onExit(function() {
       server.close()
       if (!client.destroyed) {
@@ -33,30 +53,44 @@ if (!url.match(/^http/) && !isTorrent) {
     })
   })
 } else {
-  setTimeout(function() {
-    console.log('Starting http stream', url)
-    cast(url)
-  }, 5000)
+  console.log('Starting http stream', url)
+  castWithRetry(url)
 }
 
 var sigints = 0;
 var playerState = null
 var currentPlayer = null
+var noPlayerFoundMsg = 'No playable devices found network'
+
+var createError = ({msg, ...props}) => {
+  const error = new Error(msg)
+  Object.assign(error, props)
+  return error
+}
 
 function cast(url) {
-  getPlayers.then(function(players) {
-    if (!players.length) {
-      return console.log('No playable devices on network')
-    }
-    players.some(function(player) {
-      console.log('casting video to device', player.name, url)
-      player.play(url, {title: 'Streamcaster Torrent'})
-      player.on('status', function(status) {
-        console.log('Player status', status)
-        playerState = status
+  return new Promise((resolve, reject) => {
+    getPlayers().then(function(players) {
+      if (!players.length) {
+        console.log(noPlayerFoundMsg)
+        return reject(createError({ msg: noPlayerFoundMsg, name: 'NoDNLAPlayerFoundError' }))
+      }
+      console.log('Available players: ', dlnacasts.players.map(player => player.name))
+      players.some(function(player) {
+        console.log('casting video to device', player.name, url)
+        player.play(url, {title: 'Streamcaster Torrent'}, () => resolve())
+        player.on('status', function(status) {
+          console.log('Player status', status)
+          playerState = status
+          resolve(status)
+        })
+        player.on('error', function(error) {
+          console.log('Player error', error)
+          reject(error)
+        })
+        currentPlayer = player
+        return player
       })
-      currentPlayer = player
-      return player
     })
   })
 }
@@ -93,7 +127,7 @@ function readCommands() {
 
   readcommand.loop(function(err, args, str, next) {
     
-    if (err) return readErrors(err)
+    if (err) return readErrors(err, next)
 
     debug('Received args', args);
 
@@ -150,7 +184,7 @@ function parseCommand(msg) {
   return false
 }
 
-function readErrors(err) {
+function readErrors(err, next) {
   if (err && err.code !== 'SIGINT') {
       throw err;
   } else if (err) {
@@ -158,8 +192,8 @@ function readErrors(err) {
           process.exit(0);
       } else {
           sigints++;
-          debug('Press ^C again to exit.');
-          return next();
+          console.log('Press ^C again to exit.');
+          return next && next();
       }
   } else {
       sigints = 0;
