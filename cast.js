@@ -17,8 +17,55 @@ var isHttp = url => url.match(/^https?\:\/\//)
 
 var url = process.argv[2];
 
+function showUsage() {
+  console.log(`
+    usage: 
+      bitcast $url
+
+      Param: 
+        $url A URL of either
+          - http url of video file (mp4)
+          - a torrent identifier (.torrent file, magnet or infoHash)
+  `)
+}
+
 if (!url) {
-  throw new Error('Please specify url argument')
+  console.log('Please specify url argument')
+  showUsage()
+  return
+} else {
+  setImmediate(() => startCast(url))
+}
+
+var sigints = 0;
+var playerState = null
+var currentPlayer = null
+var noPlayerFoundMsg = 'No playable devices found network'
+
+var startCast = (url) => {
+  if (isTorrent(url)) {
+    var magnet = url
+    console.log('Starting torrent stream', magnet)
+    server(magnet, function(err, url, server, client, type) {
+      if (err) {
+        console.log('Server error', err)
+        throw err
+      }
+      console.log('Server created at url', url, type)
+      castWithRetry(url)
+        .then(() => availableCommandMsg())
+      onExit(function() {
+        server.close()
+        if (!client.destroyed) {
+          client.destroy()
+        }
+      })
+    })
+  } else {
+    console.log('Starting http stream', url)
+    castWithRetry(url)
+      .then(() => availableCommandMsg())
+  }
 }
 
 var getPlayers = () => new Promise(function(resolve) {
@@ -32,35 +79,15 @@ var getPlayers = () => new Promise(function(resolve) {
 })
 
 var castWithRetry = (url, retries = 5, interval = 5000) => {
-  cast(url).catch(error => {
+  return cast(url).catch(error => {
     debug(error)
     console.log('Cast failed, retrying...')
-    setTimeout(() => castWithRetry(url, retries - 1, interval))
+    return new Promise(resolve => setTimeout(() => {
+      castWithRetry(url, retries - 1, interval)
+        .then(status => resolve(status))
+    }))
   })
 }
-
-if (!isHttp(url) && isTorrent(url)) {
-  var magnet = url
-  console.log('Starting torrent stream', magnet)
-  server(magnet, function(url, server, client, type) {
-    console.log('Server created at url', url, type)
-    castWithRetry(url)
-    onExit(function() {
-      server.close()
-      if (!client.destroyed) {
-        client.destroy()
-      }
-    })
-  })
-} else {
-  console.log('Starting http stream', url)
-  castWithRetry(url)
-}
-
-var sigints = 0;
-var playerState = null
-var currentPlayer = null
-var noPlayerFoundMsg = 'No playable devices found network'
 
 var createError = ({msg, ...props}) => {
   const error = new Error(msg)
@@ -163,15 +190,20 @@ function readCommands() {
   });
 }
 
-function invalidCommandMsg() {
+function availableCommandMsg() {
   console.log(`
-    Please enter a command
+    Available commands
       seek [time]
       play
       stop
       pause
       resume
     `)
+}
+
+function invalidCommandMsg() {
+  console.log(`Invalid command received.`)
+  availableCommandMsg()
 }
 
 function parseCommand(msg) {
