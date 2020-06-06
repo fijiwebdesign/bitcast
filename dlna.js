@@ -1,5 +1,5 @@
 var MediaRenderer = require('upnp-mediarenderer-client')
-var debug = require('debug')('bitcast:dnla')
+var debug = require('debug')('bitcast:dlna')
 var events = require('events')
 var get = require('simple-get')
 var mime = require('mime')

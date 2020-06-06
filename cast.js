@@ -1,4 +1,4 @@
-var dlnacasts = require('./dnla')()
+var dlnacasts = require('./dlna')()
 var server = require('./lib/server')
 var onExit = require('./lib/onExit')
 var readcommand = require('readcommand')
