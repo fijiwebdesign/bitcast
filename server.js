@@ -1,4 +1,4 @@
-var server = require('./lib/server')
+var torrentServer = require('./lib/torrentServer')
 var onExit = require('./lib/onExit')
 
 var magnet = process.argv[2];
@@ -9,7 +9,7 @@ if (!magnet) {
 
 function createServer(magnet, cb) {
   console.log('Starting torrent stream', magnet)
-  server(magnet, function(url, server, client, type) {
+  torrentServer(magnet, function(url, server, client, type) {
     console.log('Server created at url', url, type)
     cb && cb(url)
     onExit(function() {

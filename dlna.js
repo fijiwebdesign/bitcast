@@ -32,7 +32,13 @@ module.exports = function () {
     var player = new events.EventEmitter()
 
     var connect = thunky(function reconnect (cb) {
-      var client = new MediaRenderer(player.xml)
+      var client
+      try {
+        client = new MediaRenderer(player.xml)
+      } catch(e) {
+        console.log('Error creating mediaRender')
+        return
+      }
 
       client.on('error', function (err) {
         player.emit('error', err)
@@ -202,7 +208,8 @@ module.exports = function () {
           return
         }
 
-        parseString(body.toString(), {explicitArray: false, explicitRoot: false},
+        try {
+          parseString(body.toString(), {explicitArray: false, explicitRoot: false},
           function (err, service) {
             if (err) return
             if (!service.device) return
@@ -227,6 +234,9 @@ module.exports = function () {
               emit(casts[name])
             }
           })
+        } catch(e) {
+          console.log('error parsing xml', e)
+        }
       })
     })
   }

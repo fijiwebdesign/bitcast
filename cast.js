@@ -1,9 +1,10 @@
 var dlnacasts = require('./dlna')()
-var server = require('./lib/server')
+var torrentServer = require('./lib/torrentServer')
 var onExit = require('./lib/onExit')
 var readcommand = require('readcommand')
 var EventEmitter = require('eventemitter2').EventEmitter2
 var parseTorrent = require('parse-torrent')
+var { createFileServer, isFile } = require('./lib/fileServer')
 var debug = require('debug')('bitcast:cast')
 
 var isTorrent = url => {
@@ -47,7 +48,7 @@ var startCast = (url) => {
   if (isTorrent(url)) {
     var magnet = url
     console.log('Starting torrent stream', magnet)
-    server(magnet, function(err, url, server, client, type) {
+    torrentServer(magnet, function(err, url, server, client, type) {
       if (err) {
         console.log('Server error', err)
         throw err
@@ -66,7 +67,13 @@ var startCast = (url) => {
     console.log('Starting http stream', url)
     castWithRetry(url)
       .then(() => availableCommandMsg())
-  } else {
+  } else if (isFile(url)) {
+    createFileServer(url, { host: '0.0.0.0', port: 8000 }, (err, url) => {
+      if (err) throw err
+      castWithRetry(url)
+        .then(() => availableCommandMsg())
+    })
+  }else {
     console.log('Parameter Error: Unknown url argument')
     showUsage()
   }
@@ -85,7 +92,7 @@ var getPlayers = () => new Promise(function(resolve) {
 var castWithRetry = (url, retries = 5, interval = 5000) => {
   return cast(url).catch(error => {
     debug(error)
-    console.log('Cast failed, retrying...')
+    console.log('Cast failed, retrying...', error)
     return new Promise(resolve => setTimeout(() => {
       castWithRetry(url, retries - 1, interval)
         .then(status => resolve(status))
@@ -106,10 +113,10 @@ function cast(url) {
         console.log(noPlayerFoundMsg)
         return reject(createError({ msg: noPlayerFoundMsg, name: 'NoDNLAPlayerFoundError' }))
       }
-      console.log('Available players: ', dlnacasts.players.map(player => player.name))
+      console.log('Available players: ', players.map(player => player.name))
       players.some(function(player) {
         console.log('casting video to device', player.name, url)
-        player.play(url, {title: 'Streamcaster Torrent'}, () => resolve())
+        player.play(url, {title: 'BitCast || ' + url}, () => resolve())
         player.on('status', function(status) {
           console.log('Player status', status)
           playerState = status
