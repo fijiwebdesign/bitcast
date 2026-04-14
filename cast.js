@@ -85,11 +85,15 @@ var getPlayers = () => new Promise(function(resolve) {
 var castWithRetry = (url, retries = 5, interval = 5000) => {
   return cast(url).catch(error => {
     debug(error)
-    console.log('Cast failed, retrying...')
-    return new Promise(resolve => setTimeout(() => {
+    if (retries <= 0) {
+      console.log('Cast failed, no retries remaining')
+      return Promise.reject(error)
+    }
+    console.log('Cast failed, retrying in %dms (%d retries left)...', interval, retries)
+    return new Promise((resolve, reject) => setTimeout(() => {
       castWithRetry(url, retries - 1, interval)
-        .then(status => resolve(status))
-    }))
+        .then(resolve, reject)
+    }, interval))
   })
 }
 
