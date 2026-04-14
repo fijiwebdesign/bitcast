@@ -1,1 +1,1 @@
-module.exports = require('./dnla')
+module.exports = require('./dlna')
