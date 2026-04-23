@@ -138,6 +138,15 @@ Get a status object of the current played video.
 
 Emitted when a status object is received.
 
+## Multi-Network Support
+
+Bitcast supports discovery and casting across multiple network interfaces (e.g. Ethernet + WiFi, multiple VLANs). See [Multi-Network Improvements](docs/multi-network-improvements.md) for details.
+
+## Documentation
+
+- [Architecture](docs/architecture.md) — system overview, module descriptions, and data flow
+- [Multi-Network Improvements](docs/multi-network-improvements.md) — multi-interface discovery, per-player URL rewriting, and configuration options
+
 ## License
 
 MIT

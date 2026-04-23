@@ -41,22 +41,24 @@ if (!url) {
 var sigints = 0;
 var playerState = null
 var currentPlayer = null
-var noPlayerFoundMsg = 'No playable devices found network'
+var noPlayerFoundMsg = 'No playable devices found on network'
 
 var startCast = (url) => {
   if (isTorrent(url)) {
     var magnet = url
     console.log('Starting torrent stream', magnet)
-    server(magnet, function(err, url, server, client, type) {
+    server(magnet, function(err, streamUrl, srv, client, type) {
       if (err) {
         console.log('Server error', err)
         throw err
       }
-      console.log('Server created at url', url, type)
-      castWithRetry(url)
+      console.log('Server created at url', streamUrl, type)
+      serverUrl = streamUrl
+      castWithRetry(streamUrl)
         .then(() => availableCommandMsg())
       onExit(function() {
-        server.close()
+        dlnacasts.destroy()
+        srv.close()
         if (!client.destroyed) {
           client.destroy()
         }
@@ -70,6 +72,15 @@ var startCast = (url) => {
     console.log('Parameter Error: Unknown url argument')
     showUsage()
   }
+}
+
+var serverUrl = null
+
+function playerUrl (baseUrl, playerHost) {
+  if (!baseUrl || !playerHost) return baseUrl
+  var parsed = new URL(baseUrl)
+  parsed.hostname = server.closestAddress(playerHost)
+  return parsed.toString()
 }
 
 var getPlayers = () => new Promise(function(resolve) {
@@ -112,8 +123,9 @@ function cast(url) {
       }
       console.log('Available players: ', dlnacasts.players.map(player => player.name))
       players.some(function(player) {
-        console.log('casting video to device', player.name, url)
-        player.play(url, {title: 'Streamcaster Torrent'}, () => resolve())
+        var castUrl = playerUrl(url, player.host) || url
+        console.log('casting video to device', player.name, castUrl)
+        player.play(castUrl, {title: 'Streamcaster Torrent'}, () => resolve())
         player.on('status', function(status) {
           console.log('Player status', status)
           playerState = status

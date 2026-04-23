@@ -3,6 +3,7 @@ var debug = require('debug')('bitcast:dlna')
 var events = require('events')
 var get = require('simple-get')
 var mime = require('mime')
+var os = require('os')
 var parallel = require('run-parallel')
 var parseString = require('xml2js').parseString
 
@@ -17,12 +18,108 @@ var thunky = require('thunky')
 
 var noop = function () {}
 
-module.exports = function () {
+var DEFAULT_SEARCH_TARGETS = [
+  'urn:schemas-upnp-org:device:MediaRenderer:1',
+  'urn:schemas-upnp-org:device:MediaRenderer:2',
+  'urn:schemas-upnp-org:service:AVTransport:1'
+]
+
+var DISCOVERY_INTERVAL = 10000
+
+function getNetworkInterfaces () {
+  var interfaces = os.networkInterfaces()
+  var addresses = []
+  Object.keys(interfaces).forEach(function (name) {
+    interfaces[name].forEach(function (iface) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        addresses.push({ name: name, address: iface.address })
+      }
+    })
+  })
+  return addresses
+}
+
+module.exports = function (opts) {
+  opts = opts || {}
   var that = new events.EventEmitter()
   var casts = {}
-  var ssdp = SSDP ? new SSDP() : null
+  var ssdpClients = []
+  var discoveryTimer = null
+  var searchTargets = opts.searchTargets || DEFAULT_SEARCH_TARGETS
+  var discoveryInterval = opts.discoveryInterval || DISCOVERY_INTERVAL
 
   that.players = []
+
+  function handleSsdpResponse (headers, statusCode, info) {
+    debug('ssdp.on response', headers, statusCode, info)
+    if (!headers.LOCATION) return
+
+    get.concat(headers.LOCATION, function (err, res, body) {
+      if (err) {
+        debug('Error requesting location', headers.LOCATION)
+        return
+      }
+
+      parseString(body.toString(), {explicitArray: false, explicitRoot: false},
+        function (err, service) {
+          if (err) return
+          if (!service.device) return
+
+          debug('device %j', service.device)
+
+          var name = service.device.friendlyName
+
+          if (!name) return
+
+          var host = info.address
+          var xml = headers.LOCATION
+          var key = name + '@' + host
+
+          if (!casts[key]) {
+            casts[key] = {name: name, host: host, xml: xml}
+            return emit(casts[key])
+          }
+
+          if (casts[key] && !casts[key].host) {
+            casts[key].host = host
+            casts[key].xml = xml
+            emit(casts[key])
+          }
+        })
+    })
+  }
+
+  function createSsdpClients () {
+    if (!SSDP) return
+
+    var interfaces = getNetworkInterfaces()
+
+    if (interfaces.length === 0) {
+      debug('no network interfaces found, using default SSDP client')
+      var client = new SSDP()
+      client.on('response', handleSsdpResponse)
+      ssdpClients.push(client)
+      return
+    }
+
+    interfaces.forEach(function (iface) {
+      debug('creating SSDP client on %s (%s)', iface.name, iface.address)
+      try {
+        var client = new SSDP({ sourcePort: 0, ssdpIp: iface.address })
+        client.on('response', handleSsdpResponse)
+        ssdpClients.push(client)
+      } catch (err) {
+        debug('failed to create SSDP client on %s: %s', iface.address, err.message)
+      }
+    })
+
+    if (ssdpClients.length === 0) {
+      debug('all per-interface clients failed, falling back to default')
+      var fallback = new SSDP()
+      fallback.on('response', handleSsdpResponse)
+      ssdpClients.push(fallback)
+    }
+  }
 
   var emit = function (cst) {
     debug('Emit ', cst)
@@ -82,7 +179,7 @@ module.exports = function () {
           contentType: opts.type || mime.lookup(url, 'video/mp4'),
           metadata: opts.metadata || {
             title: opts.title || '',
-            type: 'video', // can be 'video', 'audio' or 'image'
+            type: 'video',
             subtitlesUrl: player.subtitles && player.subtitles.length ? player.subtitles[0] : null
           }
         }
@@ -191,55 +288,42 @@ module.exports = function () {
     that.emit('update', player)
   }
 
-  if (ssdp) {
-    ssdp.on('response', function (headers, statusCode, info) {
-      debug('ssdp.on response', headers, statusCode, info)
-      if (!headers.LOCATION) return
+  createSsdpClients()
 
-      get.concat(headers.LOCATION, function (err, res, body) {
-        if (err) {
-          debug('Error requesting location', headers.LOCATION)
-          return
-        }
-
-        parseString(body.toString(), {explicitArray: false, explicitRoot: false},
-          function (err, service) {
-            if (err) return
-            if (!service.device) return
-
-            debug('device %j', service.device)
-
-            var name = service.device.friendlyName
-
-            if (!name) return
-
-            var host = info.address
-            var xml = headers.LOCATION
-
-            if (!casts[name]) {
-              casts[name] = {name: name, host: host, xml: xml}
-              return emit(casts[name])
-            }
-
-            if (casts[name] && !casts[name].host) {
-              casts[name].host = host
-              casts[name].xml = xml
-              emit(casts[name])
-            }
-          })
+  that.update = function () {
+    debug('querying ssdp on %d client(s)', ssdpClients.length)
+    searchTargets.forEach(function (target) {
+      ssdpClients.forEach(function (client) {
+        client.search(target)
       })
     })
   }
 
-  that.update = function () {
-    debug('querying ssdp')
-    if (ssdp) ssdp.search('urn:schemas-upnp-org:device:MediaRenderer:1')
+  that.startDiscovery = function () {
+    that.update()
+    if (!discoveryTimer) {
+      discoveryTimer = setInterval(function () {
+        that.update()
+      }, discoveryInterval)
+    }
+  }
+
+  that.stopDiscovery = function () {
+    if (discoveryTimer) {
+      clearInterval(discoveryTimer)
+      discoveryTimer = null
+    }
   }
 
   that.destroy = function () {
+    that.stopDiscovery()
+    ssdpClients.forEach(function (client) {
+      if (client.stop) client.stop()
+    })
+    ssdpClients = []
   }
 
-  that.update()
+  that.startDiscovery()
 
   return that
 }
